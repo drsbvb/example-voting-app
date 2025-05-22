@@ -1,65 +1,90 @@
-# Example Voting App
+# cc-example-voting-app
 
-A simple distributed application running across multiple Docker containers.
+## Objectifs
 
-## Getting started
+Mettre en place l’application open-source *Example Voting App* dans un cluster Kubernetes, comprendre son architecture et tester le cycle de vote en temps réel.
 
-Download [Docker Desktop](https://www.docker.com/products/docker-desktop) for Mac or Windows. [Docker Compose](https://docs.docker.com/compose) will be automatically installed. On Linux, make sure you have the latest version of [Compose](https://docs.docker.com/compose/install/).
+## Prérequis
+- Un cluster fonctionnel
+- kubectl installé et configuré
+- Git
 
-This solution uses Python, Node.js, .NET, with Redis for messaging and Postgres for storage.
+## Infrastructure
+![infrastructure](architecture.JPG)
 
-Run in this directory to build and run the app:
+Voici l'architecture mise en place pour notre application.
+On y retrouve nos différents pods et services ainsi que la communication entre eux.
 
-```shell
-docker compose up
+L'application de vote fonctionne comme un système distribué composé de plusieurs services interconnectés. L'utilisateur interagit d'abord avec une application web frontend, qui lui permet de voter entre deux options. Lorsqu’un vote est soumis, il est envoyé à un serveur Redis, qui joue le rôle de file d’attente pour stocker temporairement les votes de manière rapide et efficace. Ensuite, un worker interroge Redis pour récupérer les nouveaux votes. Chaque vote récupéré est ensuite enregistré dans une base de données PostgreSQL, pour garantir que les données ne soient pas perdues en cas de redémarrage. Enfin, une application web se connecte à cette base de données pour afficher les résultats du vote en temps réel, en les mettant à jour dynamiquement afin que les utilisateurs puissent voir l’évolution des votes en direct.
+
+## Déploiement
+
+### Clonage du dépôt 
+```bash
+git clone https://github.com/dockersamples/example-voting-app.git
+cd example-voting-app/k8s-specifications
 ```
 
-The `vote` app will be running at [http://localhost:8080](http://localhost:8080), and the `results` will be at [http://localhost:8081](http://localhost:8081).
-
-Alternately, if you want to run it on a [Docker Swarm](https://docs.docker.com/engine/swarm/), first make sure you have a swarm. If you don't, run:
-
-```shell
-docker swarm init
+### Déploiement des ressources Kubernetes
+```bash
+## Création d'un namespace pour isoler nos ressources
+kubectl create ns voting-app  
+  
+## Déploiement des services de données
+kubectl apply -f redis-deployment.yaml -n voting-app  
+kubectl apply -f redis-service.yaml -n voting-app  
+kubectl apply -f db-deployment.yaml -n voting-app  
+kubectl apply -f db-service.yaml -n voting-app  
+ 
+## Déploiement du worker
+kubectl apply -f worker-deployment.yaml -n voting-app
+ 
+## Déploiement des interfaces utilisateur (vote et résultats)
+kubectl apply -f vote-deployment.yaml -n voting-app  
+kubectl apply -f vote-service.yaml -n voting-app  
+kubectl apply -f result-deployment.yaml -n voting-app  
+kubectl apply -f result-service.yaml -n voting-app  
 ```
 
-Once you have your swarm, in this directory run:
-
-```shell
-docker stack deploy --compose-file docker-stack.yml vote
+### Vérification
+```bash
+kubectl get pod -n voting-app  
 ```
-
-## Run the app in Kubernetes
-
-The folder k8s-specifications contains the YAML specifications of the Voting App's services.
-
-Run the following command to create the deployments and services. Note it will create these resources in your current namespace (`default` if you haven't changed it.)
-
-```shell
-kubectl create -f k8s-specifications/
+![PODS](2.png)
+Pods : running
+```bash
+kubectl get deployment -n voting-app  
 ```
-
-The `vote` web app is then available on port 31000 on each host of the cluster, the `result` web app is available on port 31001.
-
-To remove them, run:
-
-```shell
-kubectl delete -f k8s-specifications/
+![deploy](3.png)
+Déploiements : prêt
+```bash
+kubectl get rs -n voting-app 
 ```
+![replicaset](4.png)
+Desired : 1
+```bash
+kubectl get svc -n voting-app  
+```
+![svc](5.png)
+Service & ports
 
-## Architecture
+### Vue d'ensemble
+![result](6.png)
+On retrouve bien toutes nos ressources créées et utilisées par notre application !
 
-![Architecture diagram](architecture.excalidraw.png)
+### Accès à l'application
+Vérification de l'adresse ip du node avec la commande :
+```bash
+kubectl describe node   
+```
+![ip](7.png)
 
-* A front-end web app in [Python](/vote) which lets you vote between two options
-* A [Redis](https://hub.docker.com/_/redis/) which collects new votes
-* A [.NET](/worker/) worker which consumes votes and stores them in…
-* A [Postgres](https://hub.docker.com/_/postgres/) database backed by a Docker volume
-* A [Node.js](/result) web app which shows the results of the voting in real time
-
-## Notes
-
-The voting application only accepts one vote per client browser. It does not register additional votes if a vote has already been submitted from a client.
-
-This isn't an example of a properly architected perfectly designed distributed app... it's just a simple
-example of the various types of pieces and languages you might see (queues, persistent data, etc), and how to
-deal with them in Docker at a basic level.
+Depuis le navigateur : http://192.168.59.100:31000
+![site](8.png)
+Accès à l'interface de resultat depuis le navigateur : http://172.180.0.29:31001
+![site2](9.png)
+### Résultats 
+Acutalisation des résultats en temps réel : 
+![resultvote](10.png)
+![resultvote2](11.png)
+Notre application est donc bien fonctionnelle !
